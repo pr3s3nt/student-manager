@@ -30,8 +30,6 @@ resources:
       host: ${resources.dns.host}
       path: /
       port: 80
-  backend-svc:
-    type: service
 service:
   ports:
     http:
