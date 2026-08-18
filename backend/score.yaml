@@ -1,0 +1,38 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: backend
+  annotations:
+    tags: "python,fastapi,api"
+containers:
+  backend:
+    image: "."
+    variables:
+      DB_HOST: "${resources.db.host}"
+      DB_PORT: "${resources.db.port}"
+      DB_NAME: "${resources.db.name}"
+      DB_USER: "${resources.db.username}"
+      DB_PASSWORD: "${resources.db.password}"
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+    resources:
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+resources:
+  db:
+    type: postgres
+    class: application
+service:
+  ports:
+    http:
+      port: 8000
+      targetPort: 8000

@@ -1,0 +1,39 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: frontend
+  annotations:
+    tags: "nginx,vue,ui"
+containers:
+  frontend:
+    image: "."
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 80
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 80
+    resources:
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+      requests:
+        memory: "32Mi"
+        cpu: "25m"
+resources:
+  dns:
+    type: dns
+  route:
+    type: route
+    params:
+      host: ${resources.dns.host}
+      path: /
+      port: 80
+  backend-svc:
+    type: service
+service:
+  ports:
+    http:
+      port: 80
+      targetPort: 80

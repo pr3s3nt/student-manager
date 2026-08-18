@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Sinh viên</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; color: #555; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input:focus { outline: none; border-color: #007bff; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 8px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn:hover { opacity: 0.9; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #333; }
+        tr:hover { background: #f8f9fa; }
+        .actions { white-space: nowrap; }
+        .actions .btn { padding: 6px 12px; margin: 2px; }
+        .empty { text-align: center; color: #888; padding: 40px; }
+        .error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
+        .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>🎓 Quản lý Sinh viên</h1>
+
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">{{ editingId ? 'Sửa sinh viên' : 'Thêm sinh viên mới' }}</h3>
+            <div v-if="message" :class="messageType">{{ message }}</div>
+            <form @submit.prevent="submitForm">
+                <div class="form-group">
+                    <label>Họ và tên</label>
+                    <input v-model="form.name" required placeholder="Nguyễn Văn A">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input v-model="form.email" type="email" required placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Ngành học</label>
+                    <input v-model="form.major" required placeholder="Công nghệ thông tin">
+                </div>
+                <button type="submit" class="btn btn-primary">{{ editingId ? 'Cập nhật' : 'Thêm mới' }}</button>
+                <button v-if="editingId" type="button" class="btn btn-secondary" @click="cancelEdit">Hủy</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 15px;">Danh sách sinh viên</h3>
+            <table v-if="students.length">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Họ và tên</th>
+                        <th>Email</th>
+                        <th>Ngành học</th>
+                        <th class="actions">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="s in students" :key="s.id">
+                        <td>{{ s.id }}</td>
+                        <td>{{ s.name }}</td>
+                        <td>{{ s.email }}</td>
+                        <td>{{ s.major }}</td>
+                        <td class="actions">
+                            <button class="btn btn-success" @click="editStudent(s)">Sửa</button>
+                            <button class="btn btn-danger" @click="deleteStudent(s.id)">Xóa</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div v-else class="empty">Chưa có sinh viên nào. Hãy thêm sinh viên mới!</div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+
+        const { createApp } = Vue;
+        createApp({
+            data() {
+                return {
+                    students: [],
+                    form: { name: '', email: '', major: '' },
+                    editingId: null,
+                    message: '',
+                    messageType: ''
+                }
+            },
+            async mounted() {
+                await this.fetchStudents();
+            },
+            methods: {
+                async fetchStudents() {
+                    try {
+                        const res = await fetch(`${API_URL}/students`);
+                        this.students = await res.json();
+                    } catch (e) {
+                        this.showMessage('Không thể tải danh sách sinh viên', 'error');
+                    }
+                },
+                async submitForm() {
+                    try {
+                        const url = this.editingId
+                            ? `${API_URL}/students/${this.editingId}`
+                            : `${API_URL}/students`;
+                        const method = this.editingId ? 'PUT' : 'POST';
+
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.form)
+                        });
+
+                        if (!res.ok) {
+                            const err = await res.json();
+                            throw new Error(err.detail || 'Lỗi không xác định');
+                        }
+
+                        this.showMessage(this.editingId ? 'Cập nhật thành công!' : 'Thêm sinh viên thành công!', 'success');
+                        this.cancelEdit();
+                        await this.fetchStudents();
+                    } catch (e) {
+                        this.showMessage(e.message, 'error');
+                    }
+                },
+                editStudent(student) {
+                    this.editingId = student.id;
+                    this.form = { name: student.name, email: student.email, major: student.major };
+                },
+                cancelEdit() {
+                    this.editingId = null;
+                    this.form = { name: '', email: '', major: '' };
+                },
+                async deleteStudent(id) {
+                    if (!confirm('Bạn có chắc muốn xóa sinh viên này?')) return;
+                    try {
+                        await fetch(`${API_URL}/students/${id}`, { method: 'DELETE' });
+                        this.showMessage('Đã xóa sinh viên', 'success');
+                        await this.fetchStudents();
+                    } catch (e) {
+                        this.showMessage('Không thể xóa sinh viên', 'error');
+                    }
+                },
+                showMessage(msg, type) {
+                    this.message = msg;
+                    this.messageType = type;
+                    setTimeout(() => { this.message = ''; }, 3000);
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
