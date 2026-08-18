@@ -5,19 +5,29 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
-env:
-  REGISTRY: localhost:5001
-
+# Kích hoạt luồng platform khi app có commit mới. Việc build/deploy thật chạy trên
+# runner của platform (nơi có registry + kubeconfig); repo app chỉ "gõ cửa".
+#
+# GITHUB_TOKEN mặc định KHÔNG dispatch được sang repo khác (idp-platform) — GitHub chặn
+# cross-repo. Cần một token riêng PLATFORM_DISPATCH_TOKEN: fine-grained PAT với quyền
+# Actions: write trên pr3s3nt/idp-platform. Đặt một lần cho mỗi app repo:
+#   gh secret set PLATFORM_DISPATCH_TOKEN -R pr3s3nt/student-manager
 jobs:
   trigger-build:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger build on platform
+        env:
+          GH_TOKEN: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::PLATFORM_DISPATCH_TOKEN chưa được đặt trên repo này — không thể"
+            echo "::error::gọi build trên pr3s3nt/idp-platform. Xem hướng dẫn trong file này."
+            exit 1
+          fi
           gh workflow run build-app.yaml \
             -R pr3s3nt/idp-platform \
             -f app_repo=${{ github.repository }} \
             -f sha=${{ github.sha }} \
             -f ref=${{ github.ref_name }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
