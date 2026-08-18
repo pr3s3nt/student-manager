@@ -5,29 +5,68 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
-# Kích hoạt luồng platform khi app có commit mới. Việc build/deploy thật chạy trên
-# runner của platform (nơi có registry + kubeconfig); repo app chỉ "gõ cửa".
+# Production-shape: repo ứng dụng TỰ build + push ảnh trên runner của chính nó, rồi gọi
+# platform deploy. Platform không build hộ nữa. Runner self-hosted (label student-builder)
+# vì registry localhost:5001 chỉ với tới được từ máy trong mạng nội bộ.
 #
-# GITHUB_TOKEN mặc định KHÔNG dispatch được sang repo khác (idp-platform) — GitHub chặn
-# cross-repo. Cần một token riêng PLATFORM_DISPATCH_TOKEN: fine-grained PAT với quyền
-# Actions: write trên pr3s3nt/idp-platform. Đặt một lần cho mỗi app repo:
-#   gh secret set PLATFORM_DISPATCH_TOKEN -R pr3s3nt/student-manager
+# Token: PLATFORM_DISPATCH_TOKEN (fine-grained PAT / token có repo scope trên idp-platform)
+# để (1) checkout renderer idpctl và (2) bắn repository_dispatch deploy-request.
+env:
+  PYTHON: python3
+
 jobs:
-  trigger-build:
-    runs-on: ubuntu-latest
+  build-and-deploy:
+    runs-on: [self-hosted, student-builder]
     steps:
-      - name: Trigger build on platform
+      - name: Checkout app (full history — cần cho content/tree-hash)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: app
+
+      # Renderer sống trong repo platform. App pin phiên bản qua app/platform.lock; ở đây
+      # dùng main cho gọn. idpctl image-plan là NGUỒN DUY NHẤT quyết định tên ảnh — CI hỏi
+      # nó thay vì tự bịa tag, nếu lệch thì Fleet apply ảnh chưa ai push.
+      - name: Checkout platform (idpctl + platform.env.yaml)
+        uses: actions/checkout@v4
+        with:
+          repository: pr3s3nt/idp-platform
+          ref: main
+          path: platform
+          token: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
+
+      - name: Build & push images (tags từ image-plan)
+        run: |
+          set -euo pipefail
+          SHA=$(git -C app rev-parse HEAD)
+          REGISTRY=$($PYTHON platform/idpctl --env-config platform/platform.env.yaml \
+            config --get registry.path)
+
+          PLAN=$($PYTHON platform/idpctl --env-config platform/platform.env.yaml image-plan \
+            --app "${{ github.event.repository.name }}" --tag "$SHA" --registry "$REGISTRY" \
+            --app-dir app --catalog platform --with-build)
+          echo "$PLAN"
+
+          PLAN="$PLAN" $PYTHON - <<'PY'
+          import json, os, subprocess
+          plan = json.loads(os.environ["PLAN"])
+          for wl, spec in plan.items():
+              img = spec["image"]; ctx = "app/" + spec["context"]; df = "app/" + spec["dockerfile"]
+              print(f"==> build {wl}: {img}", flush=True)
+              subprocess.run(["docker", "build", "-f", df, "-t", img, ctx], check=True)
+              subprocess.run(["docker", "push", img], check=True)
+          PY
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Gọi platform deploy (repository_dispatch)
         env:
           GH_TOKEN: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::PLATFORM_DISPATCH_TOKEN chưa được đặt trên repo này — không thể"
-            echo "::error::gọi build trên pr3s3nt/idp-platform. Xem hướng dẫn trong file này."
-            exit 1
-          fi
-          gh workflow run build-app.yaml \
-            -R pr3s3nt/idp-platform \
-            -f app_repo=${{ github.repository }} \
-            -f sha=${{ github.sha }} \
-            -f ref=${{ github.ref_name }}
+          gh api repos/pr3s3nt/idp-platform/dispatches \
+            -f event_type=deploy-request \
+            -f client_payload[app]="${{ github.event.repository.name }}" \
+            -f client_payload[repo]="${{ github.repository }}" \
+            -f client_payload[sha]="$SHA" \
+            -f client_payload[env]=staging
+          echo "==> đã yêu cầu deploy $SHA -> staging"
