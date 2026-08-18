@@ -63,10 +63,13 @@ jobs:
           GH_TOKEN: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
         run: |
           set -euo pipefail
+          # Quy ước dự án: nhánh dev -> staging, nhánh main -> production.
+          if [ "${{ github.ref_name }}" = "main" ]; then ENV=prod; else ENV=staging; fi
+          echo "==> nhánh ${{ github.ref_name }} -> môi trường $ENV"
           gh api repos/pr3s3nt/idp-platform/dispatches \
             -f event_type=deploy-request \
             -f client_payload[app]="${{ github.event.repository.name }}" \
             -f client_payload[repo]="${{ github.repository }}" \
             -f client_payload[sha]="$SHA" \
-            -f client_payload[env]=staging
-          echo "==> đã yêu cầu deploy $SHA -> staging"
+            -f client_payload[env]="$ENV"
+          echo "==> đã yêu cầu deploy $SHA -> $ENV"
